@@ -1,0 +1,32 @@
+import { commonStyles, commonFooter } from './styles';
+
+export const authorInvitationTemplate = (inviteUrl: string): string => `
+<html>
+<head>
+    <style type="text/css">
+        ${commonStyles}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Invitation to Join as an Author</h1>
+    </div>
+    
+    <div class="content">
+        <p>You have been invited to join the University of Benin Journal of Science, Technology and Innovation (UBJSTI) as an author.</p>
+        
+        <p>As an author, you can submit your manuscripts for publication and track their progress through the peer-review process.</p>
+        
+        <p>Please click the button below to complete your profile and accept this invitation:</p>
+        
+        <a href="${inviteUrl}" class="button">Complete Your Profile</a>
+        
+        <p>This invitation link will expire in 30 days.</p>
+        
+        <p>If you have any questions about this invitation, please contact the editorial team.</p>
+    </div>
+    
+    ${commonFooter}
+</body>
+</html>
+`;
