@@ -15,7 +15,7 @@ export const reconciliationAssignmentTemplate = (
             font-weight: bold;
             padding: 10px;
             background-color: #f8e0f5;
-            border-left: 3px solid #AA319A;
+            border-left: 3px solid #0c2342;
             margin: 15px 0;
         }
     </style>
@@ -37,13 +37,13 @@ export const reconciliationAssignmentTemplate = (
         <p>Your task is to provide an independent assessment to help resolve the discrepancy. Please complete your reconciliation review by:</p>
         
         <p class="deadline-notice"><strong>${new Date(
-    dueDate
-  ).toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })}</strong></p>
+          dueDate
+        ).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })}</strong></p>
         
         <a href="${reviewUrl}" class="button">Start Reconciliation Review</a>
         

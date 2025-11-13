@@ -3,20 +3,15 @@ import logger from '../utils/logger';
 import validateEnv from '../utils/validateEnv';
 import { ManuscriptStatus } from '../Manuscript_Submission/models/manuscript.model';
 import {
-  reviewReminderTemplate,
   overdueReviewTemplate,
   reconciliationAssignmentTemplate,
   reviewAssignmentTemplate,
   manuscriptNotificationTemplate,
   submissionConfirmationTemplate,
-  statusUpdateTemplate,
   reviewerInvitationTemplate,
   reviewerCredentialsTemplate,
-  invitationTemplate,
-  credentialsTemplate,
-  aiReviewFailureTemplate,
   manuscriptStatusUpdateTemplate,
-  proposalArchiveNotificationTemplate,
+  manuscriptArchiveNotificationTemplate,
   authorInvitationTemplate,
   authorCredentialsTemplate,
   subscriptionConfirmationTemplate,
