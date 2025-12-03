@@ -6,7 +6,11 @@ import asyncHandler from '../../utils/asyncHandler';
 import logger from '../../utils/logger';
 import emailService from '../../services/email.service';
 import { NotFoundError, BadRequestError } from '../../utils/customErrors';
-import { getEligibleFaculties } from '../../utils/facultyClusters';
+import {
+  getEligibleFacultiesForAutomaticAssignment,
+  getFacultiesByChoice,
+  getClusterByFaculty,
+} from '../../utils/facultyClusters';
 import mongoose from 'mongoose';
 
 interface EligibleReviewer {
@@ -16,6 +20,7 @@ interface EligibleReviewer {
   totalReviewsCount: number;
   completionRate: number;
   facultyTitle?: string;
+  subcluster?: string;
 }
 
 interface IReassignReviewResponse {
@@ -82,10 +87,10 @@ class ReassignReviewController {
         ).map((r) => r.reviewer);
 
         const submitter = await User.findById(manuscript.submitter);
-        if (!submitter) {
-          throw new NotFoundError('Submitter not found');
+        if (!submitter || !submitter.assignedFaculty) {
+          throw new NotFoundError('Submitter or submitter faculty not found');
         }
-        const eligibleFaculties = getEligibleFaculties(
+        const eligibleFaculties = getEligibleFacultiesForAutomaticAssignment(
           submitter.assignedFaculty as string
         );
 
@@ -97,9 +102,13 @@ class ReassignReviewController {
         }).sort({ 'reviews.length': 1 }); // simple workload sort
 
         if (eligibleReviewers.length === 0) {
-          throw new NotFoundError(
-            'No eligible reviewers found for automatic reassignment.'
-          );
+           const allEligible = await this.getEligibleReviewers(manuscript._id.toString());
+           res.status(400).json({
+            success: false,
+            message: 'Could not find an eligible reviewer automatically from the same sub-cluster. Please select one manually.',
+            data: { eligibleReviewers: allEligible }
+          });
+          return;
         }
         newReviewer = eligibleReviewers[0];
       }
@@ -143,32 +152,54 @@ class ReassignReviewController {
     }
   );
 
-  getEligibleReviewers = asyncHandler(async (req: Request, res: Response) => {
-    const { manuscriptId } = req.params;
+  getEligibleReviewers = async (manuscriptId: string) => {
     const manuscript =
       await Manuscript.findById(manuscriptId).populate('submitter');
     if (!manuscript) {
       throw new NotFoundError('Manuscript not found');
     }
     const submitter = manuscript.submitter as any;
-    const eligibleFaculties = getEligibleFaculties(submitter.assignedFaculty);
-    const existingReviewerIds = (
-      await Review.find({ manuscript: manuscriptId })
-    ).map((r) => r.reviewer);
-    const eligibleReviewers = await User.find({
-      role: UserRole.REVIEWER,
-      isActive: true,
-      assignedFaculty: { $in: eligibleFaculties },
-      _id: { $nin: existingReviewerIds },
-    });
-    const adminReviewers = await User.find({
-      role: UserRole.ADMIN,
-      isActive: true,
-      _id: { $nin: existingReviewerIds },
-    });
+    const submitterFaculty = submitter.assignedFaculty;
+
+    if (!submitterFaculty) {
+        return { firstChoice: [], secondChoice: [] };
+    }
+
+    const { firstChoice, secondChoice } = getFacultiesByChoice(submitterFaculty);
+    const existingReviewerIds = (await Review.find({ manuscript: manuscriptId })).map(r => r.reviewer);
+
+    const findReviewersByFaculty = async (faculties: string[]) => {
+      const reviewers = await User.find({
+        role: UserRole.REVIEWER,
+        isActive: true,
+        assignedFaculty: { $in: faculties },
+        _id: { $nin: existingReviewerIds },
+      }).lean(); // Use .lean() for performance
+      
+      return reviewers.map(r => ({
+          ...r,
+          subcluster: getClusterByFaculty(r.assignedFaculty as string) || 'N/A',
+      }));
+    };
+
+    const firstChoiceReviewers = await findReviewersByFaculty(firstChoice);
+    const secondChoiceReviewers = await findReviewersByFaculty(secondChoice);
+
+    // Admins are always second choice
+    const adminReviewers = await User.find({ role: UserRole.ADMIN, isActive: true, _id: { $nin: existingReviewerIds } }).lean();
+    const adminsWithSubcluster = adminReviewers.map(r => ({ ...r, subcluster: 'N/A' }));
+
+    return {
+      firstChoice: firstChoiceReviewers,
+      secondChoice: [...secondChoiceReviewers, ...adminsWithSubcluster],
+    };
+  }
+
+  getEligibleReviewersEndpoint = asyncHandler(async (req: Request, res: Response) => {
+    const reviewers = await this.getEligibleReviewers(req.params.manuscriptId);
     res.status(200).json({
-      success: true,
-      data: [...eligibleReviewers, ...adminReviewers],
+        success: true,
+        data: reviewers,
     });
   });
 
@@ -232,6 +263,7 @@ class ReassignReviewController {
             totalReviewsCount: reviewCount,
             completionRate:
               reviewCount > 0 ? (completedCount / reviewCount) * 100 : 0,
+            subcluster: 'N/A',
           });
         }
 
@@ -257,6 +289,7 @@ class ReassignReviewController {
               totalReviewsCount: reviewCount,
               completionRate:
                 reviewCount > 0 ? (completedCount / reviewCount) * 100 : 0,
+              subcluster: getClusterByFaculty(reviewer.assignedFaculty as string) || 'N/A',
             });
           }
         }
@@ -267,33 +300,10 @@ class ReassignReviewController {
         });
       } else {
         // Regular manuscript - use existing logic
-        const submitter = await User.findById(manuscript.submitter);
-        if (!submitter) {
-          throw new NotFoundError('Submitter not found');
-        }
-        const eligibleFaculties = getEligibleFaculties(
-          submitter.assignedFaculty as string
-        );
-        const existingReviewerIds = (
-          await Review.find({ manuscript: manuscriptId })
-        ).map((r) => r.reviewer);
-
-        const eligibleReviewers = await User.find({
-          role: UserRole.REVIEWER,
-          isActive: true,
-          assignedFaculty: { $in: eligibleFaculties },
-          _id: { $nin: existingReviewerIds },
-        });
-
-        const adminReviewers = await User.find({
-          role: UserRole.ADMIN,
-          isActive: true,
-          _id: { $nin: existingReviewerIds },
-        });
-
+        const reviewers = await this.getEligibleReviewers(manuscriptId);
         res.status(200).json({
-          success: true,
-          data: [...eligibleReviewers, ...adminReviewers],
+            success: true,
+            data: reviewers,
         });
       }
     }

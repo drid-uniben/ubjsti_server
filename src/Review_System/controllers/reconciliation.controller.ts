@@ -8,7 +8,7 @@ import User, { UserRole } from '../../model/user.model';
 import { NotFoundError, BadRequestError } from '../../utils/customErrors';
 import logger from '../../utils/logger';
 import emailService from '../../services/email.service';
-import { getEligibleFaculties } from '../../utils/facultyClusters';
+import { getEligibleFacultiesForAutomaticAssignment } from '../../utils/facultyClusters';
 import asyncHandler from '../../utils/asyncHandler';
 
 class ReconciliationController {
@@ -54,7 +54,7 @@ class ReconciliationController {
       }
 
       const submitter = manuscript.submitter as any;
-      const eligibleFaculties = getEligibleFaculties(submitter.assignedFaculty);
+      const eligibleFaculties = getEligibleFacultiesForAutomaticAssignment(submitter.assignedFaculty);
 
       const existingReviewerIds = reviews.map((r) => r.reviewer.toString());
 

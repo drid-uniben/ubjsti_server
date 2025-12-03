@@ -1,4 +1,3 @@
- 
 import { Request, Response } from 'express';
 import User, { UserRole, IUser } from '../../model/user.model';
 import Manuscript, {
@@ -15,7 +14,11 @@ import logger from '../../utils/logger';
 import emailService from '../../services/email.service';
 import { NotFoundError, BadRequestError } from '../../utils/customErrors';
 import { Types } from 'mongoose';
-import { getEligibleFaculties } from '../../utils/facultyClusters';
+import {
+  getEligibleFacultiesForAutomaticAssignment,
+  getFacultiesByChoice,
+  getClusterByFaculty,
+} from '../../utils/facultyClusters';
 
 interface IAssignReviewResponse {
   success: boolean;
@@ -28,6 +31,7 @@ interface IReviewerWithCounts extends IUser {
   pendingReviewsCount: number;
   discrepancyCount: number;
   totalReviewsCount: number;
+  subcluster?: string; // Add subcluster for response
 }
 
 // Define interface for populated review
@@ -50,7 +54,11 @@ interface PopulatedReview extends Omit<IReview, 'manuscript' | 'reviewer'> {
 class AssignReviewController {
   assignReviewer = asyncHandler(
     async (
-      req: Request<{ manuscriptId: string }, {}, { assignmentType: 'automatic' | 'manual', reviewerId?: string }>,
+      req: Request<
+        { manuscriptId: string },
+        {},
+        { assignmentType: 'automatic' | 'manual'; reviewerId?: string }
+      >,
       res: Response<IAssignReviewResponse>
     ): Promise<void> => {
       const { manuscriptId } = req.params;
@@ -74,31 +82,50 @@ class AssignReviewController {
 
       if (assignmentType === 'manual') {
         if (!reviewerId) {
-          throw new BadRequestError('Reviewer ID is required for manual assignment.');
+          throw new BadRequestError(
+            'Reviewer ID is required for manual assignment.'
+          );
         }
         selectedReviewer = await User.findById(reviewerId);
         if (!selectedReviewer) {
           throw new NotFoundError('Selected reviewer not found.');
         }
-        const selectedReviewerId: Types.ObjectId = selectedReviewer!._id as Types.ObjectId;
-        if (existingReviews.some(r => r.reviewer.equals(selectedReviewerId))) {
-          throw new BadRequestError('This reviewer is already assigned to this manuscript.');
+        const selectedReviewerId: Types.ObjectId = selectedReviewer!
+          ._id as Types.ObjectId;
+        if (
+          existingReviews.some((r) => r.reviewer.equals(selectedReviewerId))
+        ) {
+          throw new BadRequestError(
+            'This reviewer is already assigned to this manuscript.'
+          );
         }
-
-      } else { // Automatic assignment
+      } else {
+        // Automatic assignment
         const submitter = manuscript.submitter as any;
         const submitterFaculty = submitter.assignedFaculty;
 
         if (!submitterFaculty) {
-          throw new BadRequestError('Cannot assign reviewers: Submitter has no assigned faculty.');
+          throw new BadRequestError(
+            'Cannot assign reviewers: Submitter has no assigned faculty.'
+          );
         }
 
-        const eligibleFaculties = getEligibleFaculties(submitterFaculty);
+        const eligibleFaculties =
+          getEligibleFacultiesForAutomaticAssignment(submitterFaculty);
         if (eligibleFaculties.length === 0) {
-          throw new BadRequestError('Cannot assign reviewers: No eligible faculties found for the manuscript\'s cluster');
+          // Gracefully fail and return eligible reviewers for manual assignment
+          const allEligible =
+            await this.getEligibleReviewersForManuscript(manuscriptId);
+          res.status(400).json({
+            success: false,
+            message:
+              'Could not find an eligible reviewer automatically from the same sub-cluster. Please select one manually.',
+            data: { eligibleReviewers: allEligible },
+          });
+          return;
         }
 
-        const existingReviewerIds = existingReviews.map(r => r.reviewer);
+        const existingReviewerIds = existingReviews.map((r) => r.reviewer);
 
         const eligibleReviewers = await User.aggregate<IReviewerWithCounts>([
           {
@@ -107,7 +134,7 @@ class AssignReviewController {
               role: UserRole.REVIEWER, // No admins in automatic assignment
               isActive: true,
               invitationStatus: { $in: ['accepted', 'added'] },
-              _id: { $nin: existingReviewerIds }
+              _id: { $nin: existingReviewerIds },
             },
           },
           {
@@ -149,16 +176,18 @@ class AssignReviewController {
               _id: 1,
             },
           },
-          { $limit: 1 }
+          { $limit: 1 },
         ]);
 
         if (eligibleReviewers.length === 0) {
           // Return eligible reviewers for manual assignment
-          const allEligible = await this.getEligibleReviewersForManuscript(manuscriptId);
+          const allEligible =
+            await this.getEligibleReviewersForManuscript(manuscriptId);
           res.status(400).json({
             success: false,
-            message: 'Could not find an eligible reviewer automatically. Please select one manually.',
-            data: { eligibleReviewers: allEligible }
+            message:
+              'Could not find an eligible reviewer automatically. Please select one manually.',
+            data: { eligibleReviewers: allEligible },
           });
           return;
         }
@@ -222,8 +251,13 @@ class AssignReviewController {
   );
 
   getEligibleReviewers = asyncHandler(
-    async (req: Request<{ manuscriptId: string }>, res: Response): Promise<void> => {
-      const reviewers = await this.getEligibleReviewersForManuscript(req.params.manuscriptId);
+    async (
+      req: Request<{ manuscriptId: string }>,
+      res: Response
+    ): Promise<void> => {
+      const reviewers = await this.getEligibleReviewersForManuscript(
+        req.params.manuscriptId
+      );
       res.status(200).json({
         success: true,
         data: reviewers,
@@ -231,29 +265,58 @@ class AssignReviewController {
     }
   );
 
-  private async getEligibleReviewersForManuscript(manuscriptId: string): Promise<IUser[]> {
-    const manuscript = await Manuscript.findById(manuscriptId).populate('submitter');
+  private async getEligibleReviewersForManuscript(manuscriptId: string) {
+    const manuscript =
+      await Manuscript.findById(manuscriptId).populate('submitter');
     if (!manuscript) {
       throw new NotFoundError('Manuscript not found');
     }
 
     const submitter = manuscript.submitter as any;
-    const eligibleFaculties = getEligibleFaculties(submitter.assignedFaculty);
+    const submitterFaculty = submitter.assignedFaculty;
 
-    const existingReviewerIds = (await Review.find({ manuscript: manuscriptId })).map(r => r.reviewer);
+    if (!submitterFaculty) {
+      return { firstChoice: [], secondChoice: [] };
+    }
 
-    // Eligible reviewers (non-admins)
-    const eligibleReviewers = await User.find({
-      role: UserRole.REVIEWER,
+    const { firstChoice, secondChoice } =
+      getFacultiesByChoice(submitterFaculty);
+    const existingReviewerIds = (
+      await Review.find({ manuscript: manuscriptId })
+    ).map((r) => r.reviewer);
+
+    const findReviewersByFaculty = async (faculties: string[]) => {
+      const reviewers = await User.find({
+        role: UserRole.REVIEWER,
+        isActive: true,
+        assignedFaculty: { $in: faculties },
+        _id: { $nin: existingReviewerIds },
+      }).lean(); // Use .lean() for performance, as we are adding properties
+
+      return reviewers.map((r) => ({
+        ...r,
+        subcluster: getClusterByFaculty(r.assignedFaculty as string) || 'N/A',
+      }));
+    };
+
+    const firstChoiceReviewers = await findReviewersByFaculty(firstChoice);
+    const secondChoiceReviewers = await findReviewersByFaculty(secondChoice);
+
+    // Admins are always second choice, as per user request
+    const adminReviewers = await User.find({
+      role: UserRole.ADMIN,
       isActive: true,
-      assignedFaculty: { $in: eligibleFaculties },
       _id: { $nin: existingReviewerIds },
-    });
+    }).lean();
+    const adminsWithSubcluster = adminReviewers.map((r) => ({
+      ...r,
+      subcluster: 'N/A',
+    }));
 
-    // Admins can also be manually assigned
-    const adminReviewers = await User.find({ role: UserRole.ADMIN, isActive: true, _id: { $nin: existingReviewerIds } });
-
-    return [...eligibleReviewers, ...adminReviewers];
+    return {
+      firstChoice: firstChoiceReviewers,
+      secondChoice: [...secondChoiceReviewers, ...adminsWithSubcluster],
+    };
   }
 
   checkOverdueReviews = asyncHandler(

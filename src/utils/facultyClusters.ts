@@ -1,157 +1,93 @@
-import { scienceFaculties } from './facultyContent';
-
-/**
- * Faculty Clustering Configuration
- *
- * This module defines the faculty cluster for reviewer assignment.
- * Reviewers must be from a different faculty than the submitter,
- * but within the same cluster.
- *
- * Key Rules:
- * 1. A reviewer cannot review a manuscript from their own faculty
- * 2. A reviewer must be from a faculty in the same cluster
- * 3. Admin can review manuscripts from any faculty regardless of cluster
- */
+import { scienceFaculties, facultySubClusters, ClusterName } from './facultyContent';
 
 /**
  * Returns the raw faculty and department data for UI purposes.
+ * This remains unchanged to support the admin UI.
  */
 export const getFacultyDepartmentData = () => {
   return scienceFaculties;
 };
 
-// Define cluster mappings
-export interface ClusterMap {
-  [faculty: string]: string[];
-}
-
 /**
- * Science Cluster
- * Dynamically generated from the keys of scienceFaculties.
- * This creates a fully connected cluster where any faculty can review for any other,
- * but not for themselves.
+ * Gets the name of the cluster a given faculty belongs to.
+ * @param faculty - The name of the faculty.
+ * @returns The name of the subcluster, or null if not found.
  */
-const facultyNames = Object.keys(scienceFaculties);
-export const scienceCluster: ClusterMap = facultyNames.reduce(
-  (cluster, faculty) => {
-    cluster[faculty] = facultyNames.filter((f) => f !== faculty);
-    return cluster;
-  },
-  {} as ClusterMap
-);
+export const getClusterByFaculty = (faculty: string): ClusterName | null => {
+  for (const cluster in facultySubClusters) {
+    const clusterName = cluster as ClusterName;
+    if (facultySubClusters[clusterName].includes(faculty)) {
+      return clusterName;
+    }
+  }
+  return null;
+};
 
 /**
- * Get eligible faculties for reviewer assignment.
- * Assumes the input is a canonical faculty name from the cluster.
+ * Gets all faculties within a specific subcluster.
+ * @param cluster - The name of the subcluster.
+ * @returns An array of faculty names.
+ */
+export const getFacultiesInCluster = (cluster: ClusterName): string[] => {
+  return facultySubClusters[cluster] || [];
+};
+
+/**
+ * Get eligible faculties for AUTOMATIC reviewer assignment.
+ * For automatic assignment, eligible reviewers are those in the same cluster
+ * as the submitter, but not in the same faculty.
  * @param submitterFaculty - The canonical faculty name of the manuscript submitter.
- * @returns Array of faculty names that can review this manuscript.
+ * @returns Array of faculty names that can be automatically assigned.
  */
-export function getEligibleFaculties(submitterFaculty: string): string[] {
-  return scienceCluster[submitterFaculty] || [];
+export function getEligibleFacultiesForAutomaticAssignment(submitterFaculty: string): string[] {
+  const cluster = getClusterByFaculty(submitterFaculty);
+  if (!cluster) {
+    return [];
+  }
+  const facultiesInCluster = getFacultiesInCluster(cluster);
+  return facultiesInCluster.filter((faculty) => faculty !== submitterFaculty);
 }
 
 /**
- * Check if two faculties are in the same cluster.
- * Assumes inputs are canonical faculty names.
- * @param faculty1 - First faculty name.
- * @param faculty2 - Second faculty name.
- * @returns True if faculties are in the same cluster.
+ * Gets eligible faculties categorized by "firstChoice" (same cluster) and
+ * "secondChoice" (all other clusters) for MANUAL reviewer assignment.
+ * @param submitterFaculty - The canonical faculty name of the manuscript submitter.
+ * @returns An object with firstChoice and secondChoice faculty arrays.
  */
-export function areInSameCluster(faculty1: string, faculty2: string): boolean {
-  const eligibleForFaculty1 = scienceCluster[faculty1] || [];
-  return eligibleForFaculty1.includes(faculty2) || faculty1 === faculty2;
-}
+export const getFacultiesByChoice = (submitterFaculty: string) => {
+  const submitterCluster = getClusterByFaculty(submitterFaculty);
+  const allFaculties = Object.keys(scienceFaculties);
 
-/**
- * Check if a reviewer from a given faculty can review a manuscript.
- * This is the core logic for reviewer assignment based on faculty.
- * Assumes inputs are canonical faculty names from the 'assignedFaculty' field.
- * @param reviewerFaculty - Reviewer's assigned faculty.
- * @param submitterFaculty - Submitter's assigned faculty.
- * @returns True if reviewer is eligible.
- */
-export function canReview(
-  reviewerFaculty: string,
-  submitterFaculty: string
-): boolean {
-  // A user must have an assigned faculty to participate in review logic.
-  if (!reviewerFaculty || !submitterFaculty) {
-    return false;
+  if (!submitterCluster) {
+    // If the submitter's faculty isn't in a cluster, all faculties are second choice
+    return {
+      firstChoice: [],
+      secondChoice: allFaculties.filter(
+        (faculty) => faculty !== submitterFaculty
+      ),
+    };
   }
 
-  // Rule 1: Reviewer cannot review manuscripts from their own faculty.
-  if (reviewerFaculty === submitterFaculty) {
-    return false;
-  }
-
-  // Rule 2: A reviewer must be from a faculty in the same cluster.
-  const eligibleFaculties = getEligibleFaculties(submitterFaculty);
-
-  // Check if reviewer's faculty is in the eligible list.
-  return eligibleFaculties.includes(reviewerFaculty);
-}
-
-/**
- * Get all faculties in the cluster.
- * @returns Array of all faculty names in the cluster.
- */
-export function getAllFacultiesInCluster(): string[] {
-  return Object.keys(scienceCluster);
-}
-
-/**
- * Validate if a faculty exists in the cluster.
- * @param faculty - Faculty name to validate.
- * @returns True if faculty exists in the cluster.
- */
-export function isFacultyInCluster(faculty: string): boolean {
-  return !!scienceCluster[faculty];
-}
-
-/**
- * Get cluster statistics for the admin dashboard.
- * @returns Statistics about the cluster.
- */
-export function getClusterStatistics(): {
-  totalFaculties: number;
-  averageConnections: number;
-  faculties: string[];
-} {
-  const faculties = Object.keys(scienceCluster);
-  const totalFaculties = faculties.length;
-
-  if (totalFaculties === 0) {
-    return { totalFaculties: 0, averageConnections: 0, faculties: [] };
-  }
-
-  const totalConnections = Object.values(scienceCluster).reduce(
-    (sum, connections) => sum + connections.length,
-    0
+  const firstChoice = getFacultiesInCluster(submitterCluster).filter(
+    (faculty) => faculty !== submitterFaculty
   );
 
-  const averageConnections = totalConnections / totalFaculties;
+  const secondChoice = allFaculties.filter(
+    (faculty) =>
+      !facultySubClusters[submitterCluster].includes(faculty) &&
+      faculty !== submitterFaculty
+  );
 
-  return {
-    totalFaculties,
-    averageConnections: Math.round(averageConnections * 10) / 10,
-    faculties,
-  };
+  return { firstChoice, secondChoice };
+};
+
+
+/**
+ * Validate if a faculty exists.
+ * @param faculty - Faculty name to validate.
+ * @returns True if faculty exists.
+ */
+export function isFacultyInCluster(faculty: string): boolean {
+    const allFaculties = Object.keys(scienceFaculties);
+    return allFaculties.includes(faculty);
 }
-
-// Example usage:
-/*
-import { canReview } from './utils/facultyClusters';
-
-// Check if a reviewer can review a manuscript
-const isEligible = canReview(
-  'Faculty of Law',   // Reviewer's assigned faculty
-  'Faculty of Arts'   // Submitter's assigned faculty
-);
-// Returns: true
-
-const notEligibleSameFaculty = canReview(
-  'Faculty of Arts',  // Reviewer's assigned faculty
-  'Faculty of Arts'   // Submitter's assigned faculty
-);
-// Returns: false
-*/
