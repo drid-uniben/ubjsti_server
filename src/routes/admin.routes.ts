@@ -136,6 +136,13 @@ router.put(
   adminController.editRevisedManuscript
 );
 
+router.patch(
+  '/manuscripts/:id/archive',
+  authenticateAdminToken,
+  adminRateLimiter,
+  adminController.toggleManuscriptArchiveStatus
+);
+
 router.use('/author-management', authorManagementRoutes);
 router.use('/assign-review', assignReviewRoutes);
 router.use('/reassign-review', reassignReviewRoutes);

@@ -53,6 +53,10 @@ class ReconciliationController {
         throw new NotFoundError('Manuscript not found');
       }
 
+      if (manuscript.isArchived) {
+        throw new BadRequestError('Cannot assign reconciliation to an archived manuscript.');
+      }
+
       const submitter = manuscript.submitter as any;
       const eligibleFaculties = getEligibleFacultiesForAutomaticAssignment(submitter.assignedFaculty);
 

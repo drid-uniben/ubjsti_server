@@ -29,9 +29,11 @@ class AuthorManagementController {
         authors.map(async (author) => {
           const mainAuthorCount = await Manuscript.countDocuments({
             submitter: author._id,
+            isArchived: false,
           });
           const coAuthorCount = await Manuscript.countDocuments({
             coAuthors: author._id,
+            isArchived: false,
           });
           return {
             ...author.toObject(),

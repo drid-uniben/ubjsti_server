@@ -294,6 +294,7 @@ class ManuscriptReviewsController {
       const user = (req as AuthenticatedRequest).user;
 
       const manuscriptsWithReviews = await Manuscript.aggregate([
+        { $match: { isArchived: false } },
         {
           $lookup: {
             from: 'Reviews',
