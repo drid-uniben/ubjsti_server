@@ -21,6 +21,8 @@ const completeProfileSchema = z.object({
     name: z.string().min(2, 'Name must be at least 2 characters'),
     faculty: z.string().min(1, 'Faculty is required'),
     affiliation: z.string().min(1, 'Affiliation is required'),
+    phoneNumber: z.string().optional(),
+    areaOfSpecialization: z.string().optional(),
   }),
   params: z.object({
     token: z.string().min(1, 'Token is required'),

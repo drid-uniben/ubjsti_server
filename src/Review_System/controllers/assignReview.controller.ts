@@ -73,7 +73,9 @@ class AssignReviewController {
         throw new NotFoundError('Manuscript not found');
       }
       if (manuscript.isArchived) {
-        throw new BadRequestError('Cannot assign reviewer to an archived manuscript.');
+        throw new BadRequestError(
+          'Cannot assign reviewer to an archived manuscript.'
+        );
       }
 
       const existingReviews = await Review.find({ manuscript: manuscriptId });
@@ -246,6 +248,8 @@ class AssignReviewController {
             id: selectedReviewer._id,
             name: selectedReviewer.name,
             email: selectedReviewer.email,
+            phoneNumber: selectedReviewer.phoneNumber,
+            areaOfSpecialization: selectedReviewer.areaOfSpecialization,
           },
           dueDate,
         },

@@ -86,7 +86,8 @@ class ReviewerController {
   completeReviewerProfile = asyncHandler(
     async (req: Request, res: Response): Promise<void> => {
       const { token } = req.params;
-      const { name, faculty, affiliation } = req.body;
+      const { name, faculty, affiliation, phoneNumber, areaOfSpecialization } =
+        req.body;
 
       logger.info(
         `Reviewer profile completion attempt with token: ${token.substring(
@@ -122,6 +123,8 @@ class ReviewerController {
       reviewer.name = name;
       reviewer.faculty = faculty;
       reviewer.affiliation = affiliation;
+      reviewer.phoneNumber = phoneNumber;
+      reviewer.areaOfSpecialization = areaOfSpecialization;
       reviewer.password = generatedPassword;
       reviewer.isActive = true;
       reviewer.credentialsSent = true;
@@ -294,6 +297,8 @@ class ReviewerController {
 
           return {
             ...reviewer.toObject(),
+            phoneNumber: reviewer.phoneNumber,
+            areaOfSpecialization: reviewer.areaOfSpecialization,
             statistics: {
               assigned: assignedReviewsCount,
               completed: completedReviewsCount,
@@ -370,6 +375,8 @@ class ReviewerController {
         success: true,
         data: {
           ...reviewer.toObject(), // Convert Mongoose document to plain object
+          phoneNumber: reviewer.phoneNumber,
+          areaOfSpecialization: reviewer.areaOfSpecialization,
           // Set assignedReviews to be the list of incomplete reviews as per user's clarification
           assignedReviews: assignedReviews,
           allAssignedReviews, // Still provide all assigned review documents
@@ -446,7 +453,7 @@ class ReviewerController {
         role: UserRole.REVIEWER,
         invitationStatus: { $in: ['pending', 'expired', 'accepted', 'added'] },
       }).select(
-        '_id email assignedFaculty assignedReviews inviteTokenExpires createdAt invitationStatus'
+        '_id email assignedFaculty assignedReviews inviteTokenExpires createdAt invitationStatus phoneNumber areaOfSpecialization'
       );
 
       const formattedInvitations = invitations.map((invitation) => ({
@@ -579,6 +586,8 @@ class ReviewerController {
             name: reviewer.name,
             email: reviewer.email,
             faculty: reviewer.faculty,
+            phoneNumber: reviewer.phoneNumber,
+            areaOfSpecialization: reviewer.areaOfSpecialization,
           },
           statistics: {
             completed: completedReviews.length,

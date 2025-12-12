@@ -18,6 +18,8 @@ export interface IUser extends Document {
   assignedFaculty?: string;
   affiliation: string;
   orcid?: string;
+  phoneNumber?: string;
+  areaOfSpecialization?: string;
   manuscripts?: Types.ObjectId[];
   assignedReviews?: Types.ObjectId[]; // For reviewers
   completedReviews?: Types.ObjectId[]; // For reviewers
@@ -81,6 +83,16 @@ const UserSchema: Schema<IUser> = new Schema(
         /^\d{4}-\d{4}-\d{4}-\d{3}[0-9X]$/,
         'Please provide a valid ORCID (format: 0000-0000-0000-0000)',
       ],
+    },
+    phoneNumber: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    areaOfSpecialization: {
+      type: String,
+      trim: true,
+      required: false,
     },
     isActive: {
       type: Boolean,
