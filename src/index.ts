@@ -18,6 +18,7 @@ const getBaseDir = (): string => {
 const baseDir = getBaseDir();
 const uploadsDir = path.join(baseDir, 'uploads');
 const documentsUploadDir = path.join(uploadsDir, 'documents');
+const emailAttachmentsDir = path.join(uploadsDir, 'email-attachments');
 
 // Create directories if they don't exist - this works for both dev and prod
 if (!fs.existsSync(uploadsDir)) {
@@ -26,6 +27,13 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 [documentsUploadDir].forEach((dir: string) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    logger.info(`Directory created: ${dir}`);
+  }
+});
+
+[documentsUploadDir, emailAttachmentsDir].forEach((dir: string) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     logger.info(`Directory created: ${dir}`);
@@ -47,7 +55,9 @@ const startServer = async (): Promise<void> => {
           `Server running in ${process.env.NODE_ENV} mode on port ${port}`
         );
       } else {
-        logger.error('Could not determine server address. The server may not be listening correctly.');
+        logger.error(
+          'Could not determine server address. The server may not be listening correctly.'
+        );
       }
     });
   } catch (error: unknown) {

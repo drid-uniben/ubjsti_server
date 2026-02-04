@@ -392,6 +392,43 @@ class EmailService {
       throw error;
     }
   }
+
+  // sendDynamicEmail method signature
+  async sendDynamicEmail(
+    to: string,
+    subject: string,
+    htmlContent: string,
+    attachments?: Array<{ filename: string; path: string; contentType: string }>
+  ): Promise<void> {
+    try {
+      const mailOptions: any = {
+        from: this.emailFrom,
+        to,
+        subject,
+        html: htmlContent,
+      };
+
+      // Add attachments if provided
+      if (attachments && attachments.length > 0) {
+        mailOptions.attachments = attachments.map((att) => ({
+          filename: att.filename,
+          path: att.path,
+          contentType: att.contentType,
+        }));
+      }
+
+      await this.transporter.sendMail(mailOptions);
+      logger.info(
+        `Dynamic email sent to: ${to}${attachments?.length ? ` with ${attachments.length} attachment(s)` : ''}`
+      );
+    } catch (error) {
+      logger.error(
+        'Failed to send dynamic email:',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      throw error;
+    }
+  }
 }
 
 export default new EmailService();
