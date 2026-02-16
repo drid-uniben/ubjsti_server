@@ -6,9 +6,9 @@ import Manuscript, {
 import Review, { ReviewStatus, ReviewType } from '../models/review.model';
 import Article from '../../Articles/model/article.model';
 import {
-  BadRequestError,
   NotFoundError,
   UnauthorizedError,
+  BadRequestError,
 } from '../../utils/customErrors';
 import asyncHandler from '../../utils/asyncHandler';
 import logger from '../../utils/logger';
@@ -192,17 +192,46 @@ class DecisionsController {
       }
 
       if (status === ManuscriptStatus.APPROVED) {
-        const newArticle = new Article({
-          title: manuscript.title,
-          abstract: manuscript.abstract,
-          keywords: manuscript.keywords,
-          pdfFile: manuscript.revisedPdfFile || manuscript.pdfFile, // Use revised if available
-          author: manuscript.submitter,
-          coAuthors: manuscript.coAuthors,
+        // Check if article already exists to prevent duplicates
+        const existingArticle = await Article.findOne({
           manuscriptId: manuscript._id,
         });
-        await newArticle.save();
-        logger.info(`New article created from manuscript ${manuscriptId}`);
+
+        if (!existingArticle) {
+          const newArticle = new Article({
+            title: manuscript.title,
+            abstract: manuscript.abstract,
+            keywords: manuscript.keywords,
+            pdfFile: manuscript.revisedPdfFile || manuscript.pdfFile,
+            author: manuscript.submitter,
+            coAuthors: manuscript.coAuthors,
+            manuscriptId: manuscript._id,
+            // Set default publication options (all disabled until admin selects)
+            publicationOptions: {
+              doiEnabled: false,
+              internetArchiveEnabled: false,
+              emailNotificationEnabled: false,
+            },
+          });
+
+          try {
+            await newArticle.save();
+            logger.info(`New article created from manuscript ${manuscriptId}`);
+          } catch (saveError: any) {
+            // Handle duplicate key error gracefully if article created in parallel request
+            if (saveError.code === 11000) {
+              logger.warn(
+                `Article already exists for manuscript ${manuscriptId}, skipping duplicate creation`
+              );
+            } else {
+              throw saveError;
+            }
+          }
+        } else {
+          logger.warn(
+            `Article already exists for manuscript ${manuscriptId}, skipping creation`
+          );
+        }
       }
 
       await manuscript.save();

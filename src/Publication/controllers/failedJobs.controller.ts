@@ -17,7 +17,12 @@ class FailedJobsController {
   // Get all failed jobs
   getFailedJobs = asyncHandler(
     async (req: Request, res: Response): Promise<void> => {
-      const { page = 1, limit = 20, jobType, resolved } = req.query;
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.max(
+        1,
+        Math.min(100, parseInt(req.query.limit as string) || 20)
+      );
+      const { jobType, resolved } = req.query;
 
       const query: any = {};
       if (jobType) query.jobType = jobType;
@@ -103,13 +108,24 @@ class FailedJobsController {
         case JobType.EMAIL_NOTIFICATION:
           jobName = 'send-publication-notification';
           break;
+        default:
+          throw new Error(`Unknown job type: ${failedJob.jobType}`);
       }
 
-      await agenda.now(jobName, {
-        articleId: failedJob.articleId.toString(),
-        failedJobId: (failedJob._id as mongoose.Types.ObjectId).toString(),
-        ...failedJob.data,
-      });
+      const previousAttemptAt = new Date(failedJob.lastAttemptAt);
+      try {
+        await agenda.now(jobName, {
+          articleId: failedJob.articleId.toString(),
+          failedJobId: (failedJob._id as mongoose.Types.ObjectId).toString(),
+          ...failedJob.data,
+        });
+      } catch (error) {
+        // Revert the save since job scheduling failed
+        failedJob.attemptCount -= 1;
+        failedJob.lastAttemptAt = previousAttemptAt;
+        await failedJob.save();
+        throw error;
+      }
 
       logger.info(
         `Admin ${user.id} retried failed job ${id} (${failedJob.jobType})`
@@ -128,16 +144,21 @@ class FailedJobsController {
     async (req: Request, res: Response): Promise<void> => {
       const user = (req as AdminAuthenticatedRequest).user;
 
-      const failedJobs = await FailedJob.find({ resolved: false });
+      // Use atomic update instead of loop
+      const updateResult = await FailedJob.updateMany(
+        { resolved: false },
+        {
+          $inc: { attemptCount: 1 },
+          $set: { lastAttemptAt: new Date() },
+        }
+      );
 
+      // Then fetch updated jobs and schedule them
+      const updatedFailedJobs = await FailedJob.find({ resolved: false });
       let retriedCount = 0;
 
-      for (const failedJob of failedJobs) {
+      for (const failedJob of updatedFailedJobs) {
         try {
-          failedJob.attemptCount += 1;
-          failedJob.lastAttemptAt = new Date();
-          await failedJob.save();
-
           let jobName = '';
           switch (failedJob.jobType) {
             case JobType.DOI_REGISTRATION:
@@ -152,6 +173,8 @@ class FailedJobsController {
             case JobType.EMAIL_NOTIFICATION:
               jobName = 'send-publication-notification';
               break;
+            default:
+              throw new Error(`Unknown job type: ${failedJob.jobType}`);
           }
 
           await agenda.now(jobName, {
@@ -236,7 +259,13 @@ class FailedJobsController {
     async (req: Request, res: Response): Promise<void> => {
       const user = (req as AdminAuthenticatedRequest).user;
 
-      const result = await FailedJob.deleteMany({ resolved: true });
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const result = await FailedJob.deleteMany({
+        resolved: true,
+        resolvedAt: { $lt: thirtyDaysAgo },
+      });
 
       logger.info(
         `Admin ${user.id} deleted ${result.deletedCount} resolved failed jobs`

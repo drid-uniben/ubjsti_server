@@ -25,9 +25,9 @@ const getVolumeCoverUploadPath = (): string => {
 
 const getArticlePdfUploadPath = (): string => {
   if (process.env.NODE_ENV === 'production') {
-    return path.join(__dirname, '..', '..', 'uploads', 'documents');
+    return path.join(__dirname, '..', '..', 'uploads', 'manual_articles');
   } else {
-    return path.join(process.cwd(), 'src', 'uploads', 'documents');
+    return path.join(process.cwd(), 'src', 'uploads', 'manual_articles');
   }
 };
 
@@ -186,6 +186,7 @@ router.post(
 );
 
 // Failed Jobs Management
+// NOTE: Specific routes MUST come before /:id route to avoid param matching
 router.get(
   '/failed-jobs',
   authenticateAdminToken,
@@ -193,6 +194,7 @@ router.get(
   failedJobsController.getFailedJobs
 );
 
+// Specific routes before /:id
 router.get(
   '/failed-jobs/statistics',
   authenticateAdminToken,
@@ -200,6 +202,21 @@ router.get(
   failedJobsController.getStatistics
 );
 
+router.post(
+  '/failed-jobs/retry-all',
+  authenticateAdminToken,
+  adminRateLimiter,
+  failedJobsController.retryAllFailedJobs
+);
+
+router.delete(
+  '/failed-jobs/resolved',
+  authenticateAdminToken,
+  adminRateLimiter,
+  failedJobsController.deleteResolvedJobs
+);
+
+// Generic /:id routes AFTER specific routes
 router.get(
   '/failed-jobs/:id',
   authenticateAdminToken,
@@ -214,25 +231,11 @@ router.post(
   failedJobsController.retryFailedJob
 );
 
-router.post(
-  '/failed-jobs/retry-all',
-  authenticateAdminToken,
-  adminRateLimiter,
-  failedJobsController.retryAllFailedJobs
-);
-
 router.patch(
   '/failed-jobs/:id/resolve',
   authenticateAdminToken,
   adminRateLimiter,
   failedJobsController.markAsResolved
-);
-
-router.delete(
-  '/failed-jobs/resolved',
-  authenticateAdminToken,
-  adminRateLimiter,
-  failedJobsController.deleteResolvedJobs
 );
 
 // Email Subscriber Management
@@ -253,6 +256,12 @@ router.get(
 // ==================== PUBLIC ROUTES ====================
 
 // Published Articles
+router.get(
+  '/articles/search',
+  publicRateLimiter,
+  publicationController.searchArticles
+);
+
 router.get(
   '/articles',
   publicRateLimiter,

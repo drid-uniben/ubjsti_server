@@ -108,7 +108,7 @@ class DynamicEmailController {
   // Preview email with dynamic variables
   previewEmail = asyncHandler(
     async (req: Request, res: Response): Promise<void> => {
-      let { recipientIds, subject, headerTitle, bodyContent } = req.body;
+      const { recipientIds, subject, headerTitle, bodyContent } = req.body;
       const attachments = req.files as Express.Multer.File[] | undefined;
 
       // Robustly handle recipientIds (could be string or array from FormData)
@@ -131,10 +131,12 @@ class DynamicEmailController {
 
       // Get first recipient for preview
       const firstRecipientId = ids[0];
-      
+
       // Ensure it's a valid MongoDB ID format before querying
       if (!firstRecipientId.match(/^[0-9a-fA-F]{24}$/)) {
-        throw new BadRequestError(`Invalid recipient ID format: ${firstRecipientId}`);
+        throw new BadRequestError(
+          `Invalid recipient ID format: ${firstRecipientId}`
+        );
       }
 
       const user = await User.findById(firstRecipientId).lean();
@@ -190,7 +192,7 @@ class DynamicEmailController {
   sendCampaign = asyncHandler(
     async (req: Request, res: Response): Promise<void> => {
       const adminUser = (req as AdminAuthenticatedRequest).user;
-      let { recipientIds, subject, headerTitle, bodyContent } = req.body;
+      const { recipientIds, subject, headerTitle, bodyContent } = req.body;
       const attachments = req.files as Express.Multer.File[] | undefined;
 
       // Robustly handle recipientIds (could be string or array from FormData)

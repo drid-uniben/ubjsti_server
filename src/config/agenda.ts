@@ -318,12 +318,13 @@ agenda.define(
   }
 );
 
-// Email Notification Job
+// Email Notification Job - IDEMPOTENT HANDLER
 agenda.define(
   'send-publication-notification',
   { priority: 0, concurrency: 2 },
   async (job: Job<{ articleId: string; failedJobId?: string }>) => {
     const { articleId, failedJobId } = job.attrs.data;
+    const { v4: uuidv4 } = require('uuid');
 
     try {
       logger.info(`Sending publication notifications for article ${articleId}`);
@@ -337,15 +338,52 @@ agenda.define(
         throw new Error('Article not found');
       }
 
+      // Generate idempotency key for this job execution
+      const currentIdempotencyKey = uuidv4();
+
+      // IDEMPOTENCY CHECK: If emails were already sent with this key, skip
+      if (
+        article.emailNotificationStatus?.sent &&
+        article.emailNotificationStatus?.idempotencyKey ===
+          currentIdempotencyKey
+      ) {
+        logger.info(
+          `Notifications already sent for article ${articleId} (idempotency key matched). Skipping.`
+        );
+        return;
+      }
+
+      // IMPORTANT: Set idempotency key BEFORE sending to prevent concurrent duplicates
+      article.emailNotificationStatus = {
+        sent: false,
+        idempotencyKey: currentIdempotencyKey,
+        recipientCount: 0,
+        failureCount: 0,
+      };
+      await article.save();
+
       // Get all active subscribers
       const subscribers = await EmailSubscriber.find({ isActive: true });
+
+      if (subscribers.length === 0) {
+        logger.warn(`No active subscribers found for article ${articleId}`);
+        article.emailNotificationStatus.sent = true;
+        article.emailNotificationStatus.sentAt = new Date();
+        article.emailNotificationStatus.recipientCount = 0;
+        await article.save();
+        return;
+      }
+
+      // Track sending results
+      let successCount = 0;
+      let failureCount = 0;
 
       // Send notification emails in batches
       const batchSize = 50;
       for (let i = 0; i < subscribers.length; i += batchSize) {
         const batch = subscribers.slice(i, i + batchSize);
 
-        await Promise.all(
+        const batchResults = await Promise.allSettled(
           batch.map(async (subscriber) => {
             try {
               await emailService.sendNewArticleNotification(
@@ -358,21 +396,43 @@ agenda.define(
 
               subscriber.lastEmailSent = new Date();
               await subscriber.save();
+              return { success: true };
             } catch (error) {
               logger.error(
                 `Failed to send notification to ${subscriber.email}:`,
                 error
               );
+              return { success: false, error };
             }
           })
         );
+
+        // Count successes and failures
+        batchResults.forEach((result) => {
+          if (result.status === 'fulfilled') {
+            if (result.value.success) {
+              successCount += 1;
+            } else {
+              failureCount += 1;
+            }
+          } else {
+            failureCount += 1;
+          }
+        });
 
         // Small delay between batches to avoid rate limiting
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
+      // Update article with final notification status
+      article.emailNotificationStatus.sent = true;
+      article.emailNotificationStatus.sentAt = new Date();
+      article.emailNotificationStatus.recipientCount = successCount;
+      article.emailNotificationStatus.failureCount = failureCount;
+      await article.save();
+
       logger.info(
-        `Publication notifications sent for article ${articleId} to ${subscribers.length} subscribers`
+        `Publication notifications completed for article ${articleId}: ${successCount} sent, ${failureCount} failed`
       );
 
       // Mark failed job as resolved if this was a retry
@@ -386,7 +446,7 @@ agenda.define(
       }
     } catch (error: any) {
       logger.error(
-        `Email notification failed for article ${articleId}:`,
+        `Email notification job failed for article ${articleId}:`,
         error.message
       );
 

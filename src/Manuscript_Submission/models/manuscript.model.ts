@@ -100,7 +100,7 @@ const ManuscriptSchema: Schema<IManuscript> = new Schema(
         type: String,
         trim: true,
         minlength: [2, 'Keyword must be at least 2 characters'],
-        maxlength: [50, 'Keyword cannot exceed 50 characters'],
+        maxlength: [150, 'Keyword cannot exceed 150 characters'],
       },
     ],
 

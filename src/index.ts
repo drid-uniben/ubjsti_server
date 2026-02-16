@@ -18,12 +18,24 @@ const getBaseDir = (): string => {
 const baseDir = getBaseDir();
 const uploadsDir = path.join(baseDir, 'uploads');
 const documentsUploadDir = path.join(uploadsDir, 'documents');
+const manualArticlesDir = path.join(uploadsDir, 'manual_articles');
 const emailAttachmentsDir = path.join(uploadsDir, 'email-attachments');
+const volumeCoversDir = path.join(uploadsDir, 'volume_covers');
 
 // Create directories if they don't exist - this works for both dev and prod
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
   logger.info(`Uploads directory created: ${uploadsDir}`);
+}
+
+if (!fs.existsSync(volumeCoversDir)) {
+  fs.mkdirSync(volumeCoversDir, { recursive: true });
+  logger.info(`Directory created: ${volumeCoversDir}`);
+}
+
+if (!fs.existsSync(manualArticlesDir)) {
+  fs.mkdirSync(manualArticlesDir, { recursive: true });
+  logger.info(`Directory created: ${manualArticlesDir}`);
 }
 
 [documentsUploadDir].forEach((dir: string) => {

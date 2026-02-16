@@ -70,6 +70,21 @@ export interface IArticle extends Document {
     core: boolean;
     internetArchive: boolean;
   };
+
+  publicationOptions: {
+    doiEnabled: boolean;
+    internetArchiveEnabled: boolean;
+    emailNotificationEnabled: boolean;
+  };
+
+  // Email Notification Tracking (Idempotency)
+  emailNotificationStatus: {
+    sent: boolean;
+    sentAt?: Date;
+    idempotencyKey: string;
+    recipientCount: number;
+    failureCount: number;
+  };
 }
 
 const ArticleSchema: Schema<IArticle> = new Schema(
@@ -90,7 +105,7 @@ const ArticleSchema: Schema<IArticle> = new Schema(
       {
         type: String,
         trim: true,
-        maxlength: [50, 'Keyword cannot exceed 50 characters'],
+        maxlength: [150, 'Keyword cannot exceed 150 characters'],
       },
     ],
     pdfFile: {
@@ -248,6 +263,45 @@ const ArticleSchema: Schema<IArticle> = new Schema(
       internetArchive: {
         type: Boolean,
         default: false,
+      },
+    },
+
+    publicationOptions: {
+      doiEnabled: {
+        type: Boolean,
+        default: true,
+      },
+      internetArchiveEnabled: {
+        type: Boolean,
+        default: false,
+      },
+      emailNotificationEnabled: {
+        type: Boolean,
+        default: false,
+      },
+    },
+
+    emailNotificationStatus: {
+      sent: {
+        type: Boolean,
+        default: false,
+      },
+      sentAt: {
+        type: Date,
+        sparse: true,
+      },
+      idempotencyKey: {
+        type: String,
+        sparse: true,
+        index: true,
+      },
+      recipientCount: {
+        type: Number,
+        default: 0,
+      },
+      failureCount: {
+        type: Number,
+        default: 0,
       },
     },
   },

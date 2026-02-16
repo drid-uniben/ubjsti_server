@@ -1,8 +1,13 @@
 import { Request, Response } from 'express';
-import Manuscript from '../Manuscript_Submission/models/manuscript.model';
+import Manuscript, {
+  ManuscriptStatus,
+} from '../Manuscript_Submission/models/manuscript.model';
+import Article from '../Articles/model/article.model';
 import { NotFoundError, UnauthorizedError } from '../utils/customErrors';
 import asyncHandler from '../utils/asyncHandler';
 import logger from '../utils/logger';
+import emailService from '../services/email.service';
+import { IUser } from '../model/user.model';
 
 interface AdminAuthenticatedRequest extends Request {
   user: {
@@ -36,30 +41,26 @@ class OverrideDecisionController {
       const { status, reason, silentUpdate } =
         req.body as OverrideStatusRequest;
 
-      // Find the manuscript
-      const manuscript = await Manuscript.findById(manuscriptId);
+      const manuscript = await Manuscript.findById(manuscriptId).populate(
+        'submitter coAuthors',
+        'name email'
+      );
 
       if (!manuscript) {
         throw new NotFoundError('Manuscript not found');
       }
 
-      // Log the override action for audit trail
       logger.warn(
         `ADMIN OVERRIDE: User ${user.id} is overriding manuscript ${manuscriptId} status from ${manuscript.status} to ${status}. Reason: ${reason}. Silent: ${silentUpdate}`
       );
 
-      // Store the old status for logging
       const oldStatus = manuscript.status;
-
-      // Update the status directly without any validation
       manuscript.status = status as any;
 
-      // Add override metadata to the manuscript
       if (!manuscript.reviewComments) {
         manuscript.reviewComments = {};
       }
 
-      // Store override history
       if (!(manuscript as any).overrideHistory) {
         (manuscript as any).overrideHistory = [];
       }
@@ -73,8 +74,67 @@ class OverrideDecisionController {
         silentUpdate,
       });
 
-      // Save the manuscript
       await manuscript.save();
+
+      // NEW: Create Article if status is set to APPROVED
+      if (status === ManuscriptStatus.APPROVED) {
+        // Check if article already exists
+        const existingArticle = await Article.findOne({
+          manuscriptId: manuscript._id,
+        });
+
+        if (!existingArticle) {
+          const newArticle = new Article({
+            title: manuscript.title,
+            abstract: manuscript.abstract,
+            keywords: manuscript.keywords,
+            pdfFile: manuscript.revisedPdfFile || manuscript.pdfFile,
+            author: manuscript.submitter,
+            coAuthors: manuscript.coAuthors,
+            manuscriptId: manuscript._id,
+            // Default options - not published yet
+            publicationOptions: {
+              doiEnabled: false,
+              internetArchiveEnabled: false,
+              emailNotificationEnabled: false,
+            },
+          });
+
+          try {
+            await newArticle.save();
+            logger.info(
+              `Article created from overridden manuscript ${manuscriptId} via admin override`
+            );
+          } catch (saveError: any) {
+            // Handle duplicate key error gracefully
+            if (saveError.code !== 11000) {
+              throw saveError;
+            }
+            logger.warn(
+              `Article already exists for manuscript ${manuscriptId}, skipping creation`
+            );
+          }
+        } else {
+          logger.info(
+            `Article already exists for manuscript ${manuscriptId}, skipping creation`
+          );
+        }
+      }
+
+      // Send notification email unless silent update
+      if (!silentUpdate) {
+        const submitter = manuscript.submitter as any as IUser;
+        try {
+          await emailService.sendManuscriptStatusUpdateEmail(
+            submitter.email,
+            submitter.name,
+            manuscript.title,
+            manuscript.status as ManuscriptStatus
+          );
+        } catch (error) {
+          logger.error('Failed to send status update email:', error);
+        }
+      }
 
       logger.info(
         `Manuscript ${manuscriptId} status overridden from ${oldStatus} to ${status} by admin ${user.id}`
