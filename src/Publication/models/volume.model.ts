@@ -1,9 +1,10 @@
-import mongoose, { Document, Schema, Types } from 'mongoose';
+import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IVolume extends Document {
   volumeNumber: number;
   year: number;
   coverImage?: string;
+  coverImageIssue2?: string;
   description?: string;
   publishDate: Date;
   isActive: boolean;
@@ -27,6 +28,9 @@ const VolumeSchema: Schema<IVolume> = new Schema(
     coverImage: {
       type: String,
       // URL path to cover image
+    },
+    coverImageIssue2: {
+      type: String,
     },
     description: {
       type: String,

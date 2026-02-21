@@ -76,6 +76,11 @@ const uploadArticlePdf = multer({
   },
 });
 
+const uploadVolumeCoverFields = uploadVolumeCover.fields([
+  { name: 'coverImage', maxCount: 1 },
+  { name: 'coverImageIssue2', maxCount: 1 },
+]);
+
 const adminRateLimiter = rateLimiter(1000, 60 * 60 * 1000);
 const publicRateLimiter = rateLimiter(100, 60 * 60 * 1000);
 
@@ -86,7 +91,7 @@ router.post(
   '/volumes',
   authenticateAdminToken,
   adminRateLimiter,
-  uploadVolumeCover.single('coverImage'),
+  uploadVolumeCoverFields,
   volumeController.createVolume
 );
 
@@ -108,7 +113,7 @@ router.put(
   '/volumes/:id',
   authenticateAdminToken,
   adminRateLimiter,
-  uploadVolumeCover.single('coverImage'),
+  uploadVolumeCoverFields,
   volumeController.updateVolume
 );
 
@@ -338,5 +343,25 @@ router.get(
 );
 
 router.use('/article-analytics', articleAnalyticsRoutes);
+
+router.get(
+  '/admin/articles',
+  authenticateAdminToken,
+  adminRateLimiter,
+  publicationController.getManualArticles
+);
+router.patch(
+  '/admin/articles/:id',
+  authenticateAdminToken,
+  adminRateLimiter,
+  uploadArticlePdf.single('pdfFile'),
+  publicationController.updateManualArticle
+);
+router.delete(
+  '/admin/articles/:id',
+  authenticateAdminToken,
+  adminRateLimiter,
+  publicationController.deleteManualArticle
+);
 
 export default router;

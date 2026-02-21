@@ -121,47 +121,43 @@ class IssueController {
   );
 
   // Update issue
-  updateIssue = asyncHandler(
-    async (req: Request, res: Response): Promise<void> => {
-      const user = (req as AdminAuthenticatedRequest).user;
-      const { id } = req.params;
-      const { issueNumber, description, publishDate, isActive } = req.body;
+  updateIssue = asyncHandler(async (req, res) => {
+    const user = (req as AdminAuthenticatedRequest).user;
+    const { id } = req.params;
+    const { issueNumber, description, publishDate, isActive } = req.body;
 
-      const issue = await Issue.findById(id);
+    const issue = await Issue.findById(id);
+    if (!issue) throw new NotFoundError('Issue not found');
 
-      if (!issue) {
-        throw new NotFoundError('Issue not found');
-      }
-
-      // Check if new issue number conflicts with existing
-      if (issueNumber && issueNumber !== issue.issueNumber) {
-        const existingIssue = await Issue.findOne({
+    // ── Fix: parse to int before comparing ──
+    if (issueNumber !== undefined) {
+      const parsedIssueNumber = parseInt(issueNumber);
+      if (parsedIssueNumber !== issue.issueNumber) {
+        const conflict = await Issue.findOne({
           volume: issue.volume,
-          issueNumber,
+          issueNumber: parsedIssueNumber,
+          _id: { $ne: id },
         });
-        if (existingIssue) {
+        if (conflict)
           throw new BadRequestError(
-            `Issue ${issueNumber} already exists for this volume`
+            `Issue ${parsedIssueNumber} already exists for this volume`
           );
-        }
-        issue.issueNumber = issueNumber;
+        issue.issueNumber = parsedIssueNumber;
       }
-
-      if (description !== undefined) issue.description = description;
-      if (publishDate) issue.publishDate = new Date(publishDate);
-      if (isActive !== undefined) issue.isActive = isActive;
-
-      await issue.save();
-
-      logger.info(`Admin ${user.id} updated issue ${id}`);
-
-      res.status(200).json({
-        success: true,
-        message: 'Issue updated successfully',
-        data: issue,
-      });
     }
-  );
+
+    if (description !== undefined) issue.description = description;
+    if (publishDate) issue.publishDate = new Date(publishDate);
+    if (isActive !== undefined) issue.isActive = isActive;
+
+    await issue.save();
+    logger.info(`Admin ${user.id} updated issue ${id}`);
+    res.status(200).json({
+      success: true,
+      message: 'Issue updated successfully',
+      data: issue,
+    });
+  });
 
   // Delete issue
   deleteIssue = asyncHandler(

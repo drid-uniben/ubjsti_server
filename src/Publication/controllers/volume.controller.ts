@@ -15,40 +15,46 @@ interface AdminAuthenticatedRequest extends Request {
 
 class VolumeController {
   // Create a new volume
-  createVolume = asyncHandler(
-    async (req: Request, res: Response): Promise<void> => {
-      const user = (req as AdminAuthenticatedRequest).user;
-      const { volumeNumber, year, description, publishDate } = req.body;
+  createVolume = asyncHandler(async (req, res) => {
+    const user = (req as AdminAuthenticatedRequest).user;
+    const { volumeNumber, year, description, publishDate } = req.body;
 
-      // Check if volume number already exists
-      const existingVolume = await Volume.findOne({ volumeNumber });
-      if (existingVolume) {
-        throw new BadRequestError(`Volume ${volumeNumber} already exists`);
-      }
+    const parsedVolumeNumber = parseInt(volumeNumber);
+    const parsedYear = parseInt(year);
 
-      const volume = new Volume({
-        volumeNumber,
-        year,
-        description,
-        publishDate: publishDate || new Date(),
-      });
+    const existingVolume = await Volume.findOne({
+      volumeNumber: parsedVolumeNumber,
+    });
+    if (existingVolume)
+      throw new BadRequestError(`Volume ${parsedVolumeNumber} already exists`);
 
-      // Handle cover image upload
-      if (req.file) {
-        volume.coverImage = `${process.env.API_URL || 'http://localhost:3000'}/uploads/volume_covers/${req.file.filename}`;
-      }
+    const volume = new Volume({
+      volumeNumber: parsedVolumeNumber,
+      year: parsedYear,
+      description,
+      publishDate: publishDate || new Date(),
+    });
 
-      await volume.save();
+    const files = req.files as
+      | { [fieldname: string]: Express.Multer.File[] }
+      | undefined;
+    const API = process.env.API_URL || 'http://localhost:3000';
 
-      logger.info(`Admin ${user.id} created volume ${volumeNumber}`);
-
-      res.status(201).json({
-        success: true,
-        message: 'Volume created successfully',
-        data: volume,
-      });
+    if (files?.coverImage?.[0]) {
+      volume.coverImage = `${API}/uploads/volume_covers/${files.coverImage[0].filename}`;
     }
-  );
+    if (files?.coverImageIssue2?.[0]) {
+      volume.coverImageIssue2 = `${API}/uploads/volume_covers/${files.coverImageIssue2[0].filename}`;
+    }
+
+    await volume.save();
+    logger.info(`Admin ${user.id} created volume ${parsedVolumeNumber}`);
+    res.status(201).json({
+      success: true,
+      message: 'Volume created successfully',
+      data: volume,
+    });
+  });
 
   // Get all volumes
   getVolumes = asyncHandler(
@@ -97,67 +103,69 @@ class VolumeController {
   );
 
   // Update volume
-  updateVolume = asyncHandler(
-    async (req: Request, res: Response): Promise<void> => {
-      const user = (req as AdminAuthenticatedRequest).user;
-      const { id } = req.params;
-      const { volumeNumber, year, description, publishDate, isActive } =
-        req.body;
+  updateVolume = asyncHandler(async (req, res) => {
+    const user = (req as AdminAuthenticatedRequest).user;
+    const { id } = req.params;
+    const { volumeNumber, year, description, publishDate, isActive } = req.body;
 
-      const volume = await Volume.findById(id);
+    const volume = await Volume.findById(id);
+    if (!volume) throw new NotFoundError('Volume not found');
 
-      if (!volume) {
-        throw new NotFoundError('Volume not found');
-      }
+    const API = process.env.API_URL || 'http://localhost:3000';
 
-      // Check if new volume number conflicts with existing
-      if (volumeNumber && volumeNumber !== volume.volumeNumber) {
-        const existingVolume = await Volume.findOne({ volumeNumber });
-        if (existingVolume) {
-          throw new BadRequestError(`Volume ${volumeNumber} already exists`);
-        }
-        volume.volumeNumber = volumeNumber;
-      }
-
-      if (year) volume.year = year;
-      if (description !== undefined) volume.description = description;
-      if (publishDate) volume.publishDate = new Date(publishDate);
-      if (isActive !== undefined) volume.isActive = isActive;
-
-      // Handle cover image upload
-      if (req.file) {
-        // Delete old cover image if exists
-        if (volume.coverImage) {
-          const oldFilePath = path.join(
-            process.cwd(),
-            'src',
-            volume.coverImage.replace(
-              process.env.API_URL || 'http://localhost:3000',
-              ''
-            )
+    // ── Fix: parse to int before comparing (FormData sends strings) ──
+    if (volumeNumber !== undefined) {
+      const parsedVolumeNumber = parseInt(volumeNumber);
+      if (parsedVolumeNumber !== volume.volumeNumber) {
+        const conflict = await Volume.findOne({
+          volumeNumber: parsedVolumeNumber,
+          _id: { $ne: id },
+        });
+        if (conflict)
+          throw new BadRequestError(
+            `Volume ${parsedVolumeNumber} already exists`
           );
-          try {
-            if (fs.existsSync(oldFilePath)) {
-              fs.unlinkSync(oldFilePath);
-            }
-          } catch (err) {
-            logger.error(`Error deleting old cover image: ${err}`);
-          }
-        }
-        volume.coverImage = `${process.env.API_URL || 'http://localhost:3000'}/uploads/volume_covers/${req.file.filename}`;
+        volume.volumeNumber = parsedVolumeNumber;
       }
-
-      await volume.save();
-
-      logger.info(`Admin ${user.id} updated volume ${id}`);
-
-      res.status(200).json({
-        success: true,
-        message: 'Volume updated successfully',
-        data: volume,
-      });
     }
-  );
+
+    if (year !== undefined) volume.year = parseInt(year);
+    if (description !== undefined) volume.description = description;
+    if (publishDate) volume.publishDate = new Date(publishDate);
+    if (isActive !== undefined) volume.isActive = isActive;
+
+    const files = req.files as
+      | { [fieldname: string]: Express.Multer.File[] }
+      | undefined;
+
+    const deleteOldFile = (url: string | undefined) => {
+      if (!url) return;
+      const baseDir = process.env.NODE_ENV === 'production' ? 'dist' : 'src';
+      const filePath = path.join(process.cwd(), baseDir, url.replace(API, ''));
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (err) {
+        logger.error(`Error deleting old image: ${err}`);
+      }
+    };
+
+    if (files?.coverImage?.[0]) {
+      deleteOldFile(volume.coverImage);
+      volume.coverImage = `${API}/uploads/volume_covers/${files.coverImage[0].filename}`;
+    }
+    if (files?.coverImageIssue2?.[0]) {
+      deleteOldFile(volume.coverImageIssue2);
+      volume.coverImageIssue2 = `${API}/uploads/volume_covers/${files.coverImageIssue2[0].filename}`;
+    }
+
+    await volume.save();
+    logger.info(`Admin ${user.id} updated volume ${id}`);
+    res.status(200).json({
+      success: true,
+      message: 'Volume updated successfully',
+      data: volume,
+    });
+  });
 
   // Delete volume
   deleteVolume = asyncHandler(
@@ -181,24 +189,26 @@ class VolumeController {
         );
       }
 
-      // Delete cover image if exists
-      if (volume.coverImage) {
+      const API = process.env.API_URL || 'http://localhost:3000';
+      const baseDir = process.env.NODE_ENV === 'production' ? 'dist' : 'src';
+
+      const deleteFile = (url: string | undefined) => {
+        if (!url) return;
         const filePath = path.join(
           process.cwd(),
-          'src',
-          volume.coverImage.replace(
-            process.env.API_URL || 'http://localhost:3000',
-            ''
-          )
+          baseDir,
+          url.replace(API, '')
         );
         try {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         } catch (err) {
-          logger.error(`Error deleting cover image: ${err}`);
+          logger.error(`Error deleting image: ${err}`);
         }
-      }
+      };
+
+      // Delete cover images if they exist
+      deleteFile(volume.coverImage);
+      deleteFile(volume.coverImageIssue2);
 
       await Volume.findByIdAndDelete(id);
 
