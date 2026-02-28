@@ -23,7 +23,7 @@ const VolumeSchema: Schema<IVolume> = new Schema(
     year: {
       type: Number,
       required: [true, 'Year is required'],
-      min: [2020, 'Year must be 2020 or later'],
+      min: [2000, 'Year must be 2000 or later'],
     },
     coverImage: {
       type: String,
