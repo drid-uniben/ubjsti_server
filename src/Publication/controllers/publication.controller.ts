@@ -23,12 +23,12 @@ class PublicationController {
   // Get manuscripts ready for publication (approved articles without published status)
   getManuscriptsForPublication = asyncHandler(
     async (req: Request, res: Response): Promise<void> => {
-      const { page = 1, limit = 20 } = req.query;
+      const { page = 1, limit = 1000 } = req.query;
 
       // Find articles created from approved manuscripts that are not yet published
       const articles = await Article.find({
         isPublished: false,
-        manuscriptId: { $exists: true },
+        manuscriptId: { $exists: true, $ne: null },
       })
         .populate('manuscriptId', 'title abstract keywords status')
         .populate('author', 'name email affiliation')
@@ -39,7 +39,7 @@ class PublicationController {
 
       const total = await Article.countDocuments({
         isPublished: false,
-        manuscriptId: { $exists: true },
+        manuscriptId: { $exists: true, $ne: null },
       });
 
       res.status(200).json({
@@ -592,16 +592,19 @@ class PublicationController {
 
   // ── Get manually published articles (no manuscriptId) ─────────────
   getManualArticles = asyncHandler(async (req, res) => {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 1000 } = req.query;
 
-    const query = { isPublished: true, manuscriptId: { $exists: false } };
+    const query = {
+      isPublished: true,
+      $or: [{ manuscriptId: { $exists: false } }, { manuscriptId: null }],
+    };
 
     const articles = await Article.find(query)
       .populate('author', 'name email')
       .populate('coAuthors', 'name email')
       .populate('volume', 'volumeNumber year')
       .populate('issue', 'issueNumber publishDate')
-      .sort({ publishDate: -1 })
+      .sort({ publishDate: -1, createdAt: -1 })
       .limit(Number(limit))
       .skip((Number(page) - 1) * Number(limit));
 
