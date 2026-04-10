@@ -2,7 +2,18 @@ import type { CorsOptions } from 'cors';
 import type { HelmetOptions } from 'helmet';
 
 export const corsOptions: CorsOptions = {
-  origin: process.env.FRONTEND_URL,
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      ...(process.env.ALLOWED_ORIGINS || '').split(',').map((o) => o.trim()),
+      process.env.FRONTEND_URL,
+    ].filter(Boolean);
+
+    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   credentials: true,
   optionsSuccessStatus: 200,
