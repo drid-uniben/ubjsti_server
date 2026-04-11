@@ -28,6 +28,7 @@ const validateEnv = (): void => {
     PORT: num({ default: 3000 }),
     MONGODB_URI: url(),
     FRONTEND_URL: url(),
+    ALLOWED_ORIGINS: str({ default: '' }),
     API_URL: url(),
     LOG_LEVEL: str({
       choices: ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'],
