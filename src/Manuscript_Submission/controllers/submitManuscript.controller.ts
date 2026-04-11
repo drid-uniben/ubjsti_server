@@ -150,20 +150,18 @@ class SubmitController {
 
       // Send confirmation email to the submitter
       {
-        /*
-      try {
-        await emailService.sendSubmissionConfirmationEmail(
-          submitter.email,
-          submitter.name,
-          title
-        );
-      } catch (error) {
-        logger.error(
-          'Failed to send submission confirmation email:',
-          error instanceof Error ? error.message : 'Unknown error'
-        );
-      }
-      */
+        try {
+          await emailService.sendSubmissionConfirmationEmail(
+            submitter.email,
+            submitter.name,
+            title
+          );
+        } catch (error) {
+          logger.error(
+            'Failed to send submission confirmation email:',
+            error instanceof Error ? error.message : 'Unknown error'
+          );
+        }
       }
 
       logger.info(`New manuscript submitted by: ${submitter.email}`);
