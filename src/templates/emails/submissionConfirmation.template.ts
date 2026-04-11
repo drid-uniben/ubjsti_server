@@ -15,7 +15,7 @@ export const submissionConfirmationTemplate = (
 
   const loginInfo = isRevision
     ? `<p>You can check the status of your submission by logging into your account: <a href="${loginUrl}" class="button">Login</a></p>`
-    : '<p>You will receive your login credentials via your primary author email at any period within 24 hours to 7 days, which you can use to track the progress of your submission.</p>';
+    : '<p>You will receive subsequent updates via email too.</p>';
 
   return `
 <html>
