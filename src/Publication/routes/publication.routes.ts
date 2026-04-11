@@ -141,7 +141,7 @@ router.get(
 
 router.get(
   '/issues/:id',
-  authenticateAdminToken,
+  //authenticateAdminToken,
   adminRateLimiter,
   issueController.getIssueById
 );
